@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="https://js.api.here.com/v3/3.1/mapsjs-ui.css?dp-version=1542186754" />
+    <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-core.js"></script>
+    <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
+    <script type="text/javascript" src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
+    <title>HERE Maps csv coordinate system</title>
+    <style>
+        body, html {
+            margin: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        #map {
+            flex-grow: 1;
+            background-color: gainsboro;
+        }
+        #inputs {
+            padding: 10px;
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+            justify-content: space-between;
+        }
+        #renderButton{
+            display: flex;
+            flex-direction: row;
+            gap: 5px;
+
+        }
+    </style>
+</head>
+<body>
+<div id="inputs">
+
+    <div>
+        <label for="color">Color:</label>
+        <select id="color">
+            <option>red</option>
+            <option>blue</option>
+            <option>green</option>
+            <option>purple</option>
+        </select>
+    </div>
+
+    <input type="file" id="fileInput">
+    <div id="renderButton" >
+        <label>Toggle map points: </label>
+        <button>red</button>
+        <button>blue</button>
+        <button>green</button>
+        <button>purple</button>
+    </div>
+</div>
+<div id="map"></div>
+
+<script>
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+    setTimeout(()=> initializeMap( 'ehqhpL2DTCLhUouNwngSj2m6OLvO3EK9yUts2hpgeMM'),200)
+    function handleFileUpload(event) {
+
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const contents = e.target.result;
+            // Check if file is JSON
+            if (file.type === "application/json") {
+                const jsonData = JSON.parse(contents);
+                jsonData.sort((a, b) => {
+                    return new Date(a["@timestamp"]) - new Date(b["@timestamp"]);
+                });
+                let latlon_array = []
+                for (let row of jsonData){
+                    const logmsg = row['@message']
+                    const bodyMatch = logmsg.match(/'body':\s'(.*?)',/);
+                    if (bodyMatch && bodyMatch[1]) {
+                        const bodyStr = bodyMatch[1];
+                        const bodyJson = JSON.parse(bodyStr);
+
+
+                        for (let i = 0; i < 12; i++) {
+                            const latKey = 'Blat'+(i+1);
+                            const lonKey = 'Blon'+(i+1);
+
+                            if (latKey in bodyJson && lonKey in bodyJson){
+                                const lat = parseFloat(bodyJson[latKey]);
+                                const lng = parseFloat(bodyJson[lonKey]);
+
+                                if (!isNaN(lat) && !isNaN(lng)) {
+                                    latlon_array.push({ lat, lng });
+                                }
+                            }
+                        }
+
+                        const lat = parseFloat(bodyJson['Blat']);
+                        const lng = parseFloat(bodyJson['Blon']);
+
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            latlon_array.push({ lat, lng });
+                        }
+                    }
+                }
+                addMarkers(latlon_array);
+            }
+            // Check if file is CSV
+            else if (file.type === "text/csv") {
+                const lines = contents.split('\n');
+                const coordinates = lines.map(line => {
+                    const [lat, lng] = line.split(',');
+                    return { lat: parseFloat(lat), lng: parseFloat(lng) };
+                });
+                addMarkers(coordinates);
+            } else {
+                alert("Unsupported file type. Please upload a CSV or JSON file.");
+            }
+        };
+        reader.readAsText(file);
+    }
+    let map = null
+    function initializeMap(apiKey) {
+        // Initialize the platform object:
+        var platform = new H.service.Platform({
+            'apikey': apiKey
+        });
+
+        // Obtain the default map types from the platform object
+        var maptypes = platform.createDefaultLayers();
+
+        // Instantiate (and display) a map object:
+        map = new H.Map(
+            document.getElementById('map'),
+            maptypes.vector.normal.map,
+            {
+                zoom: 9,
+                center: { lat: 52.1, lng: 5.2 }
+            }
+        );
+        const behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
+
+        setBtnActions();
+    }
+    let GROUPS = {}
+    function addMarkers(coordinates) {
+        let group = new H.map.Group(); // create a group
+        const colorval = document.getElementById('color').value;
+        coordinates.forEach((coord, index) => {
+            var svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30">
+        <circle cx="15" cy="15" r="15" fill="${colorval}" stroke="white" stroke-width="2" />
+        <text x="15" y="20" font-size="12pt" font-family="Arial" font-weight="bold" text-anchor="middle" fill="white">${index + 1}</text>
+    </svg>`;
+            let icon = new H.map.Icon(svgMarkup);
+            let marker = new H.map.Marker(coord, { icon: icon });
+            group.addObject(marker); // add marker to the group
+        });
+        GROUPS[colorval] = group
+        map.addObject(group); // add group to the map
+    }
+
+    function setBtnActions() {
+        document.querySelectorAll("#renderButton button").forEach(button => {
+            button.addEventListener('click', function() {
+                let groupName = button.innerHTML;
+                let group = GROUPS[groupName];
+                if (group) {
+                    group.setVisibility(!group.getVisibility()); // toggle visibility
+                } else {
+                    console.error(`Group not found: ${groupName}`);
+                }
+            });
+        });
+    }
+</script>
+</body>
+</html>
